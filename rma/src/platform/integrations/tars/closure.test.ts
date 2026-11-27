@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseTarsClosure, TARS_CLOSURE_VERSION } from "./closure";
+import { assertTarsClosureConfirmation, parseTarsClosure, TARS_CLOSURE_VERSION } from "./closure";
 
 const valid = {
   version: TARS_CLOSURE_VERSION,
@@ -23,6 +23,12 @@ describe("TARS closure validation", () => {
   it("rejects a return before the rental start or in the future", () => {
     expect(() => parseTarsClosure({ ...valid, actualReturnAt: "2026-11-15T14:30:00.000Z" }, now)).toThrow("before the rental start");
     expect(() => parseTarsClosure({ ...valid, actualReturnAt: "2026-11-24T12:11:00.000Z" }, now)).toThrow("in the future");
+  });
+
+  it("requires an explicit CLOSE confirmation", () => {
+    expect(() => assertTarsClosureConfirmation("CLOSE")).not.toThrow();
+    expect(() => assertTarsClosureConfirmation("close")).toThrow("Type CLOSE");
+    expect(() => assertTarsClosureConfirmation("")).toThrow("Type CLOSE");
   });
 
   it("rejects an odometer rollback", () => {

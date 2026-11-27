@@ -8,7 +8,7 @@ import { buildRentalContractPdf, missingRentalContractFields, type RentalContrac
 import { rentalPricingDays } from "@/modules/rental/pricing";
 import { storeRentalContract, syncTarsRentalContract } from "@/modules/rental/contract-documents";
 import { TarsClient } from "@/platform/integrations/tars/client";
-import { loadSession } from "@/platform/integrations/tars/session";
+import { loadSession } from "@/platform/integrations/tars/session-store";
 
 export async function POST(
   req: Request,

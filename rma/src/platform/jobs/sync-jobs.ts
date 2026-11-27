@@ -1,7 +1,8 @@
 import { boss, ensureQueues } from "./boss";
 import { createTenantJob } from "./withTenant";
 import { startDlqWorker } from "./dlq";
-import { BITRIX_SYNC_QUEUE, DLQ_QUEUE, KAITEN_SYNC_QUEUE, TWENTY_SYNC_QUEUE } from "./queues";
+import { BITRIX_SYNC_QUEUE, DLQ_QUEUE, KAITEN_SYNC_QUEUE, TARS_CONTRACT_SYNC_QUEUE, TWENTY_SYNC_QUEUE } from "./queues";
+import { startTarsContractSyncWorker } from "./tars-contract-sync";
 import { tenant, integrationConnection } from "@/platform/db/schema";
 import { eq, and } from "drizzle-orm";
 import { syncBitrix24 } from "@/platform/integrations/bitrix24/sync";
@@ -200,6 +201,8 @@ export async function startSyncWorkers() {
       })
     )
   );
+
+  workers.push(registerWorker(TARS_CONTRACT_SYNC_QUEUE, () => startTarsContractSyncWorker()));
 
   return Promise.all(workers);
 }

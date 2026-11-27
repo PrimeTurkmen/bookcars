@@ -29,6 +29,9 @@ export const BITRIX_DISCOVERY_QUEUE = "bitrix-discovery";
 /** Twenty CRM sync (schema bootstrap / record push) — see integrations/twenty/. */
 export const TWENTY_SYNC_QUEUE = "twenty.sync.all";
 
+/** Download the final TARS PDF five minutes after a confirmed closure. */
+export const TARS_CONTRACT_SYNC_QUEUE = "tars.contract.sync";
+
 /** Smoke-test queue — see hello-job.ts / scripts/test-pg-boss.ts. */
 export const HELLO_QUEUE = "hello-tenant-job";
 
@@ -111,6 +114,15 @@ export const QUEUE_DEFINITIONS: readonly QueueDefinition[] = [
     retryDelayMax: 3600,
     expireInSeconds: 1800, // 30 min
     heartbeatSeconds: 120,
+    deleteAfterSeconds: KEEP_COMPLETED_7D,
+    deadLetter: DLQ_QUEUE,
+  },
+  {
+    name: TARS_CONTRACT_SYNC_QUEUE,
+    retryLimit: 4,
+    retryDelay: 60,
+    retryBackoff: true,
+    expireInSeconds: 120,
     deleteAfterSeconds: KEEP_COMPLETED_7D,
     deadLetter: DLQ_QUEUE,
   },

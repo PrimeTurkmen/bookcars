@@ -30,6 +30,8 @@ export function ProcessReturnModal({
     balanceDue: number;
     dailyMileageLimitKm?: number | null;
     startOdometer?: number | null;
+    contractUrl?: string | null;
+    tarsDocumentNumber?: string | null;
   };
   onClose: () => void;
   onReturned?: () => void;
@@ -40,6 +42,8 @@ export function ProcessReturnModal({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [closeInTars, setCloseInTars] = useState(false);
+  const [contractDownloaded, setContractDownloaded] = useState(false);
+  const [closeConfirmation, setCloseConfirmation] = useState("");
   const [location, setLocation] = useState("JVC");
 
   const expectedReturn = useMemo(() => {
@@ -83,6 +87,7 @@ export function ProcessReturnModal({
           finalOdometer: finalOdometer!,
           fuelLevel: fuelLevel!,
           location,
+          confirmation: closeConfirmation,
         });
         if (result.status === "dry_run") {
           setNotice(`TARS closure reviewed; nothing was submitted and the CRM rental is still active.\n${result.summary}`);
@@ -229,17 +234,36 @@ export function ProcessReturnModal({
         </div>
 
         {tarsAutoCloseEnabled && <div className="space-y-3 rounded-field border border-line-soft p-3">
-          <label className="flex items-start gap-2 text-sm text-ink-2">
-            <input type="checkbox" className="mt-1" checked={closeInTars} onChange={(event) => setCloseInTars(event.target.checked)} />
-            <span>{tarsAutoCloseDryRun ? "Review this exact closure in TARS without submitting it" : "Close the contract in TARS before marking it returned in CRM"}</span>
-          </label>
-          {closeInTars && <div><Label>TARS return location</Label><Input required value={location} onChange={(event) => setLocation(event.target.value)} /></div>}
+          <p className="text-sm font-medium text-ink">Real TARS closure · {rental.tarsDocumentNumber}</p>
+          {!rental.contractUrl ? (
+            <p className="text-xs text-warn">Sync the existing TARS PDF in the Contract section first. Closure stays locked until the PDF is available for review.</p>
+          ) : (
+            <>
+              <a
+                href={rental.contractUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setContractDownloaded(true)}
+                className="inline-flex min-h-11 items-center rounded-field border border-line bg-surface px-3 py-2 text-sm font-medium text-brand-700 hover:bg-sunken"
+              >
+                Download & review TARS PDF
+              </a>
+              <label className="flex items-start gap-2 text-sm text-ink-2">
+                <input type="checkbox" className="mt-1" disabled={!contractDownloaded} checked={closeInTars} onChange={(event) => setCloseInTars(event.target.checked)} />
+                <span>{tarsAutoCloseDryRun ? "Review this exact closure in TARS without submitting it" : "I reviewed the downloaded contract and want to close it in TARS before marking it returned in CRM"}</span>
+              </label>
+            </>
+          )}
+          {closeInTars && <>
+            <div><Label>TARS return location</Label><Input required value={location} onChange={(event) => setLocation(event.target.value)} /></div>
+            <div><Label htmlFor="tars-close-confirmation">Type CLOSE to confirm</Label><Input id="tars-close-confirmation" required autoComplete="off" value={closeConfirmation} onChange={(event) => setCloseConfirmation(event.target.value)} placeholder="CLOSE" /></div>
+          </>}
         </div>}
         {notice && <pre role="status" className="max-h-48 overflow-auto whitespace-pre-wrap rounded-field bg-success-soft p-3 text-xs text-success">{notice}</pre>}
 
         <ModalFooter>
           <ModalCancel>Cancel</ModalCancel>
-          <Button type="submit" disabled={submitting}>
+          <Button type="submit" disabled={submitting || (closeInTars && (!contractDownloaded || closeConfirmation !== "CLOSE"))}>
             {submitting ? "Processing..." : closeInTars && tarsAutoCloseDryRun ? "Review TARS closure" : closeInTars ? "Close in TARS & return" : "Confirm Return"}
           </Button>
         </ModalFooter>

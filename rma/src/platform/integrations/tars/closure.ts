@@ -2,6 +2,10 @@ import { parseTarsDocumentNumber } from "./handoff";
 
 export const TARS_CLOSURE_VERSION = 1 as const;
 
+export function assertTarsClosureConfirmation(value: unknown): asserts value is "CLOSE" {
+  if (value !== "CLOSE") throw new Error("Type CLOSE to confirm the real TARS closure");
+}
+
 export interface TarsClosure {
   version: typeof TARS_CLOSURE_VERSION;
   rentalId: string;
