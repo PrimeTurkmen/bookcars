@@ -13,6 +13,7 @@ export async function storeRentalContract(options: {
   filename: string;
   actorId: string | null;
   source: "generated" | "tars";
+  replaceExisting?: boolean;
 }): Promise<{ url: string; created: boolean }> {
   if (options.bytes.length === 0 || options.bytes.subarray(0, 5).toString() !== "%PDF-") {
     throw new Error("Contract must be a valid PDF");
@@ -30,7 +31,7 @@ export async function storeRentalContract(options: {
       const [current] = await tx.select({ contractUrl: rental.contractUrl, tarsDocumentNumber: rental.tarsDocumentNumber }).from(rental)
         .where(eq(rental.id, options.rentalId)).for("update").limit(1);
       if (!current) throw new Error("Rental not found");
-      if (current.contractUrl) return { url: current.contractUrl, created: false };
+      if (current.contractUrl && !options.replaceExisting) return { url: current.contractUrl, created: false };
       if (options.source === "generated" && current.tarsDocumentNumber) {
         throw new Error(`TARS contract ${current.tarsDocumentNumber} already exists; sync its PDF instead`);
       }
@@ -53,10 +54,12 @@ export async function storeRentalContract(options: {
       await tx.insert(auditEvent).values({
         tenantId: options.tenantId,
         actorId: options.actorId,
-        action: options.source === "tars" ? "rental.tars.contract_synced" : "rental.contract.generated",
+        action: options.source === "tars" ? options.replaceExisting ? "rental.tars.closed_contract_synced" : "rental.tars.contract_synced" : "rental.contract.generated",
         entityType: "rental",
         entityId: options.rentalId,
-        intent: options.source === "tars" ? `Downloaded the existing TARS contract PDF as document ${doc.id}` : `Generated a new RMA contract PDF as document ${doc.id}`,
+        intent: options.source === "tars"
+          ? `${options.replaceExisting ? "Downloaded the closed TARS contract PDF" : "Downloaded the existing TARS contract PDF"} as document ${doc.id}`
+          : `Generated a new RMA contract PDF as document ${doc.id}`,
       });
       return { url, created: true };
     });
@@ -73,6 +76,7 @@ export async function syncTarsRentalContract(options: {
   rentalId: string;
   actorId: string | null;
   client: TarsClient;
+  replaceExisting?: boolean;
 }): Promise<{ url: string; created: boolean }> {
   const current = await withDrizzleTenant(options.tenantId, async (tx) => {
     const [row] = await tx.select({ contractUrl: rental.contractUrl, tarsDocumentNumber: rental.tarsDocumentNumber })
@@ -80,7 +84,7 @@ export async function syncTarsRentalContract(options: {
     if (!row) throw new Error("Rental not found");
     return row;
   });
-  if (current.contractUrl) return { url: current.contractUrl, created: false };
+  if (current.contractUrl && !options.replaceExisting) return { url: current.contractUrl, created: false };
   if (!current.tarsDocumentNumber) throw new Error("This rental is not linked to an existing TARS contract");
   const contract = await options.client.downloadContract(current.tarsDocumentNumber);
   return storeRentalContract({
@@ -90,5 +94,6 @@ export async function syncTarsRentalContract(options: {
     bytes: contract.bytes,
     filename: contract.filename,
     source: "tars",
+    replaceExisting: options.replaceExisting,
   });
 }

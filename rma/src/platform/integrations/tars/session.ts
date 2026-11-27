@@ -15,97 +15,14 @@
 // manual file flow without touching the login sequence. The default provider
 // polls a file the operator writes by hand.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { loadSession, saveSession, type LoadedSession, type TarsCookie } from "./session-store";
 
-/** Minimal cookie record — structurally compatible with Playwright's Cookie. */
-export interface TarsCookie {
-  name: string;
-  value: string;
-  domain?: string;
-  path?: string;
-  expires?: number;
-}
-
-interface SessionFile {
-  savedAt: string;
-  url?: string;
-  cookies: TarsCookie[];
-}
-
-/** Reuse the jar while the access_token JWT has more than this much life left. */
-const MIN_TTL_MS = 5 * 60_000;
+export { clearSession, loadSession, saveSession, sessionFilePath } from "./session-store";
+export type { LoadedSession, TarsCookie } from "./session-store";
 
 const DEFAULT_OTP_FILE = "/tmp/tars-otp.txt";
 const OTP_WAIT_TIMEOUT_MS = 10 * 60_000;
-
-function repoRoot(): string {
-  // src/platform/integrations/tars/session.ts → rma/
-  return resolve(import.meta.dirname, "../../../..");
-}
-
-/** Session jar path: TARS_SESSION_FILE, else the gitignored repo-local file. */
-export function sessionFilePath(): string {
-  return process.env.TARS_SESSION_FILE?.trim() || resolve(repoRoot(), ".tars-session.json");
-}
-
-function jwtExpiryMs(jwt: string): number {
-  try {
-    const payload = JSON.parse(Buffer.from(jwt.split(".")[1], "base64").toString("utf8"));
-    return typeof payload.exp === "number" ? payload.exp * 1000 : 0;
-  } catch {
-    return 0;
-  }
-}
-
-export interface LoadedSession {
-  cookieHeader: string;
-  /** Epoch ms when the access_token JWT expires (0 = unknown → treat as expired). */
-  expiresAtMs: number;
-}
-
-/**
- * Read the saved cookie jar. Returns null when the file is missing/malformed
- * or the access_token expires within MIN_TTL_MS. Never throws.
- */
-export function loadSession(path = sessionFilePath()): LoadedSession | null {
-  let parsed: SessionFile;
-  try {
-    if (!existsSync(path)) return null;
-    parsed = JSON.parse(readFileSync(path, "utf8")) as SessionFile;
-  } catch {
-    return null;
-  }
-  const cookies = Array.isArray(parsed.cookies) ? parsed.cookies : [];
-  if (cookies.length === 0) return null;
-
-  const token = cookies.find((c) => c.name === "access_token");
-  if (!token) return null;
-  const expiresAtMs = jwtExpiryMs(token.value);
-  if (!expiresAtMs || expiresAtMs - Date.now() < MIN_TTL_MS) return null;
-
-  return {
-    cookieHeader: cookies.map((c) => `${c.name}=${c.value}`).join("; "),
-    expiresAtMs,
-  };
-}
-
-/** Persist a fresh cookie jar (mode 0600 — it IS the logged-in session). */
-export function saveSession(cookies: TarsCookie[], url?: string, path = sessionFilePath()): void {
-  const dir = dirname(path);
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  const payload: SessionFile = { savedAt: new Date().toISOString(), url, cookies };
-  writeFileSync(path, JSON.stringify(payload), { mode: 0o600 });
-}
-
-/** Drop the jar — call after a TarsSessionExpiredError so the next run re-logs in. */
-export function clearSession(path = sessionFilePath()): void {
-  try {
-    unlinkSync(path);
-  } catch {
-    /* already gone */
-  }
-}
 
 /**
  * Default OTP provider: polls a file (TARS_OTP_FILE, default /tmp/tars-otp.txt)

@@ -329,6 +329,8 @@ export function RentalDetail({
             balanceDue: r.balanceDue,
             dailyMileageLimitKm: r.dailyMileageLimitKm,
             startOdometer: r.startOdometer,
+            contractUrl: r.contractUrl,
+            tarsDocumentNumber: r.tarsDocumentNumber,
           }}
           onClose={() => setShowReturnModal(false)}
           onReturned={() => window.location.reload()}

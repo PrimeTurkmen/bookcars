@@ -20,7 +20,9 @@ import {
   type TarsSubmissionPackage,
 } from "@/platform/integrations/tars/submission";
 import { canManageRentalsForTenant } from "./policies";
-import { parseTarsClosure, type TarsClosure } from "@/platform/integrations/tars/closure";
+import { assertTarsClosureConfirmation, parseTarsClosure, type TarsClosure } from "@/platform/integrations/tars/closure";
+import { scheduleClosedTarsContractSync } from "@/platform/jobs/tars-contract-sync";
+import { log } from "@/platform/log";
 
 const execFileAsync = promisify(execFile);
 const CUSTOMER_DOCUMENT_CATEGORIES = ["id", "license", "passport", "international_license"];
@@ -284,6 +286,7 @@ export interface TarsClosureActionInput {
   finalOdometer: number;
   fuelLevel: number;
   location: string;
+  confirmation: string;
 }
 
 async function runBrowserClosure(value: TarsClosure, dryRun: boolean) {
@@ -311,6 +314,7 @@ export async function closeTarsContract(tenantId: string, tenantSlug: string, re
   await canManageRentalsForTenant(tenantId);
   await assertNotPreviewMode(tenantId);
   if (!autoCloseEnabled()) throw new Error("Automatic TARS closure is disabled by the feature flag");
+  assertTarsClosureConfirmation(input.confirmation);
   const actorId = await requireAuth();
   const home = await requireFleetHomeTenantId();
   const dryRun = process.env.TARS_AUTO_CLOSE_DRY_RUN !== "false";
@@ -322,6 +326,7 @@ export async function closeTarsContract(tenantId: string, tenantSlug: string, re
     if (!row) throw new Error("Rental not found");
     if (row.rental.status !== "active") throw new Error("Only an active rental can be closed in TARS");
     if (!row.rental.tarsDocumentNumber) throw new Error("Link the rental to a TARS document before closing it");
+    if (!row.rental.contractUrl) throw new Error("Sync and download the existing TARS contract PDF before closing it");
     if (!row.vin) throw new Error("Vehicle VIN is required for TARS closure");
     return parseTarsClosure({
       version: 1,
@@ -351,9 +356,28 @@ export async function closeTarsContract(tenantId: string, tenantSlug: string, re
           : `Reviewed TARS closure ${closure.documentNumber}; no return was submitted`,
       });
     });
+    let contractSyncScheduled = false;
+    if (result.status === "succeeded") {
+      try {
+        await scheduleClosedTarsContractSync({ tenantId: home, rentalId, actorId });
+        contractSyncScheduled = true;
+      } catch (scheduleError) {
+        log.error("failed to schedule closed TARS contract sync", { rentalId, err: scheduleError });
+        await withDrizzleTenant(home, async (tx) => {
+          await tx.insert(auditEvent).values({
+            tenantId: home,
+            actorId,
+            action: "rental.tars.closed_contract_sync_schedule_failed",
+            entityType: "rental",
+            entityId: rentalId,
+            intent: scheduleError instanceof Error ? scheduleError.message.slice(0, 500) : "Queue unavailable",
+          });
+        });
+      }
+    }
     refresh(tenantSlug, rentalId);
     revalidatePath(`/${tenantSlug}/operations`);
-    return result;
+    return { ...result, contractSyncScheduled };
   } catch (error) {
     const message = (error instanceof Error ? error.message : "TARS closure failed").slice(0, 500);
     await withDrizzleTenant(home, async (tx) => {
